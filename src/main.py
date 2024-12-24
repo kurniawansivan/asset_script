@@ -1,4 +1,5 @@
 import logging
+import os
 from config import *
 from one_drive import download_files_from_onedrive
 from azure_blob import upload_to_azure_blob
@@ -15,10 +16,17 @@ def terminate_process(message):
 
 def main():
     try:
+        # Step 0: Use manually provided OneDrive access token
+        logging.info("Step 0: Using manually provided OneDrive access token...")
+        access_token = os.getenv("ONEDRIVE_ACCESS_TOKEN")
+        if not access_token:
+            terminate_process("No OneDrive access token provided in the .env file.")
+        logging.info("OneDrive access token loaded successfully.")
+
         # Step 1: Download files from OneDrive
         logging.info("Step 1: Downloading files from OneDrive...")
         download_path = "./downloads"
-        files = download_files_from_onedrive(ONEDRIVE_BASE_URL, download_path)
+        files = download_files_from_onedrive(ONEDRIVE_BASE_URL, download_path, access_token)
         if not files:
             terminate_process("No files were downloaded from OneDrive.")
         logging.info(f"Downloaded {len(files)} files from OneDrive successfully.")
@@ -30,7 +38,9 @@ def main():
             file_path = f"{download_path}/{file}"
             blob_name = file
             try:
-                video_url = upload_to_azure_blob(AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY, AZURE_CONTAINER_NAME, file_path, blob_name)
+                video_url = upload_to_azure_blob(
+                    AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY, AZURE_CONTAINER_NAME, file_path, blob_name
+                )
                 uploaded_files.append({"file": file, "url": video_url})
                 logging.info(f"Uploaded file {file} to Azure Blob Storage successfully.")
             except Exception as e:
@@ -60,7 +70,7 @@ def main():
                     )
                     logging.info(f"Background updated for device {device['id']} using file {uploaded_file['file']}.")
                 except Exception as e:
-                    terminate_process(f"Failed to update background for device {device['id']}. Error: {e}")
+                    logging.error(f"Failed to update background for device {device['id']}. Skipping. Error: {e}")
 
         # Step 5: Add tags to Korona Cloud
         logging.info("Step 5: Adding tags to Korona Cloud API...")
@@ -76,7 +86,7 @@ def main():
                     )
                     logging.info(f"Tag added for device {device['id']} with file {uploaded_file['file']} successfully.")
                 except Exception as e:
-                    terminate_process(f"Failed to add tag for device {device['id']} in Korona Cloud. Error: {e}")
+                    logging.error(f"Failed to add tag for device {device['id']} in Korona Cloud. Skipping. Error: {e}")
 
         logging.info("All steps completed successfully.")
 
