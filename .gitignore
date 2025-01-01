@@ -1,3 +1,4 @@
 .env
 api.json
 **/__pycache__/
+access.json

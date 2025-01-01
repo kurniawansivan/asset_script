@@ -59,6 +59,8 @@ def main():
         # Step 4: Update background for each device
         logging.info("Step 4: Updating backgrounds for devices...")
         for uploaded_file in uploaded_files:
+            cache_id = os.path.splitext(uploaded_file["file"])[0]  # Remove file extension
+            logging.info(f"Preparing to update background for file: {uploaded_file['file']} with cacheId: {cache_id}")
             for device in devices:
                 try:
                     update_background(
@@ -66,27 +68,28 @@ def main():
                         VUSION_STORE_ID,
                         device["id"],
                         uploaded_file["url"],
-                        uploaded_file["file"]
+                        cache_id
                     )
-                    logging.info(f"Background updated for device {device['id']} using file {uploaded_file['file']}.")
+                    logging.info(f"Background updated for device {device['id']} using cacheId {cache_id} and file {uploaded_file['file']}.")
                 except Exception as e:
                     logging.error(f"Failed to update background for device {device['id']}. Skipping. Error: {e}")
 
         # Step 5: Add tags to Korona Cloud
         logging.info("Step 5: Adding tags to Korona Cloud API...")
+        tags = []
         for uploaded_file in uploaded_files:
+            cache_id = os.path.splitext(uploaded_file["file"])[0]  # Remove file extension
             for device in devices:
-                try:
-                    add_tags(
-                        KORONA_ACCOUNT_ID,
-                        KORONA_USERNAME,
-                        KORONA_PASSWORD,
-                        device["id"],
-                        uploaded_file["file"]
-                    )
-                    logging.info(f"Tag added for device {device['id']} with file {uploaded_file['file']} successfully.")
-                except Exception as e:
-                    logging.error(f"Failed to add tag for device {device['id']} in Korona Cloud. Skipping. Error: {e}")
+                if cache_id == device["id"]:  # Match cacheId to deviceId
+                    tags.append({"device_id": device["id"], "cache_id": cache_id})
+                    logging.info(f"Tag prepared for device_id: {device['id']} with cache_id: {cache_id} and file: {uploaded_file['file']}")
+
+        if tags:
+            try:
+                add_tags(KORONA_ACCOUNT_ID, KORONA_USERNAME, KORONA_PASSWORD, tags)
+                logging.info(f"Tags added successfully for {len(tags)} devices.")
+            except Exception as e:
+                logging.error(f"Failed to add tags to Korona Cloud. Error: {e}")
 
         logging.info("All steps completed successfully.")
 

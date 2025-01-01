@@ -4,13 +4,13 @@ import logging
 
 def add_tags(account_id, username, password, tags):
     """
-    Menambahkan tag ke KORONA Cloud.
+    Add tags to the Korona Cloud API.
 
     Args:
-        account_id (str): ID akun KORONA Cloud.
-        username (str): Username untuk autentikasi.
-        password (str): Password untuk autentikasi.
-        tags (list of dict): Daftar tag dengan format [{"device_id": "123", "cache_id": "abc"}].
+        account_id (str): Korona account ID.
+        username (str): Korona username.
+        password (str): Korona password.
+        tags (list): A list of tags in the format {"device_id": "00001", "cache_id": "testing_1_00001"}.
 
     Returns:
         None
@@ -19,14 +19,14 @@ def add_tags(account_id, username, password, tags):
     url = f"https://196.koronacloud.com/web/api/v3/accounts/{account_id}/tags"
     auth = HTTPBasicAuth(username, password)
 
-    # Buat payload
-    payload = [{"name": tag["cache_id"], "number": tag["device_id"]} for tag in tags]
+    # Prepare the payload
+    payload = [{"name": f'{{"deviceId": "{tag["device_id"]}", "cacheId": "{tag["cache_id"]}"}}'} for tag in tags]
 
     try:
         # Log request
-        logging.info(f"Adding {len(payload)} tags to KORONA Cloud...")
+        logging.info(f"Adding {len(payload)} tags to Korona Cloud...")
 
-        # Kirim request POST
+        # Send POST request
         response = requests.post(url, json=payload, auth=auth)
         response.raise_for_status()
 
@@ -35,5 +35,5 @@ def add_tags(account_id, username, password, tags):
 
     except requests.exceptions.RequestException as e:
         # Log error
-        logging.error(f"Failed to add tags to KORONA Cloud. Error: {e}")
+        logging.error(f"Failed to add tags to Korona Cloud. Error: {e}")
         raise e
