@@ -1,10 +1,11 @@
 import logging
 import os
+import time
 from config import *
 from one_drive import download_files_from_onedrive
 from azure_blob import upload_to_azure_blob
 from vusion_rail import get_devices, update_background
-from korona_cloud import add_tags  # <-- Make sure this exists and is correct
+from korona_cloud import add_tags  # Ensure this file/function exist
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -35,11 +36,15 @@ def main():
         logging.info("Step 2: Uploading files to Azure Blob Storage...")
         uploaded_files = []
         for file in files:
-            file_path = f"{download_path}/{file}"
+            file_path = os.path.join(download_path, file)
             blob_name = file
             try:
                 video_url = upload_to_azure_blob(
-                    AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY, AZURE_CONTAINER_NAME, file_path, blob_name
+                    AZURE_STORAGE_ACCOUNT,
+                    AZURE_STORAGE_KEY,
+                    AZURE_CONTAINER_NAME,
+                    file_path,
+                    blob_name
                 )
                 uploaded_files.append({"file": file, "url": video_url})
                 logging.info(f"Uploaded file {file} to Azure Blob Storage successfully.")
@@ -56,41 +61,57 @@ def main():
         except Exception as e:
             terminate_process(f"Failed to fetch devices from Vusion Rail API. Error: {e}")
 
-        # Step 4: Update background for each device
-        logging.info("Step 4: Updating backgrounds for devices...")
+        # Step 4: Update background for ALL devices with ALL files
+        #         (but maintain a correct cacheId per file).
+        logging.info("Step 4: Updating backgrounds for every file on every device...")
+
         for uploaded_file in uploaded_files:
-            cache_id = os.path.splitext(uploaded_file["file"])[0]  # Remove file extension
-            logging.info(f"Preparing to update background for file: {uploaded_file['file']} with cacheId: {cache_id}")
+            file_name = uploaded_file["file"]              # e.g. "testing_1_00001.mp4"
+            cache_id = os.path.splitext(file_name)[0]      # e.g. "testing_1_00001"
+            video_url = uploaded_file["url"]               # Azure URL
+
+            logging.info(f"Uploading asset '{file_name}' (cacheId='{cache_id}') to ALL devices...")
+
             for device in devices:
+                device_id = device["id"]
                 try:
+                    logging.info(
+                        f"Device {device_id}: updating background with file={file_name} and cacheId={cache_id}"
+                    )
                     update_background(
                         VUSION_SUBSCRIPTION_KEY,
                         VUSION_STORE_ID,
-                        device["id"],
-                        uploaded_file["url"],
+                        device_id,
+                        video_url,
                         cache_id
                     )
-                    logging.info(f"Background updated for device {device['id']} using cacheId {cache_id} and file {uploaded_file['file']}.")
-                except Exception as e:
-                    logging.error(f"Failed to update background for device {device['id']}. Skipping. Error: {e}")
+                    logging.info(f"Device {device_id}: background updated successfully.")
 
-        # Step 5: Creating tags for Korona Cloud
+                    # Delay 10 seconds so we don't overwhelm the API
+                    logging.info(f"Sleeping 10s before next update...")
+                    time.sleep(10)
+
+                except Exception as e:
+                    logging.error(f"Failed to update background for device {device_id}. Skipping. Error: {e}")
+
+        # Step 5: Create and post tags for matching deviceId -> file
         logging.info("Step 5: Creating and posting tags for Korona Cloud API...")
         tags = []
+
         for uploaded_file in uploaded_files:
-            # Remove the file extension to create the cacheId
-            filename_no_ext = os.path.splitext(uploaded_file["file"])[0]
-            logging.info(f"Processing uploaded file: {uploaded_file['file']} => Cache ID: {filename_no_ext}")
+            file_name_no_ext = os.path.splitext(uploaded_file["file"])[0]  # e.g. "testing_1_00001"
 
             for device in devices:
-                device_id = device["id"]  # e.g., "00001"
-                if device_id in filename_no_ext:
-                    # The "name" field must contain a JSON string for Korona
+                device_id = device["id"]
+                # If device_id is part of the filename, we create a tag linking them
+                if device_id in file_name_no_ext:
                     tag = {
-                        "name": f"{{\"deviceId\": \"{device_id}\", \"cacheId\": \"{filename_no_ext}\"}}"
+                        "name": f"{{\"deviceId\": \"{device_id}\", \"cacheId\": \"{file_name_no_ext}\"}}"
                     }
                     tags.append(tag)
-                    logging.info(f"  --> Found deviceId '{device_id}' in '{filename_no_ext}'. Tag: {tag}")
+                    logging.info(
+                        f"Matched device {device_id} to file '{file_name_no_ext}'. Tag created: {tag}"
+                    )
 
         # Log summary of tags
         if tags:
