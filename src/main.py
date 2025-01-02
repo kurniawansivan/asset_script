@@ -4,7 +4,7 @@ from config import *
 from one_drive import download_files_from_onedrive
 from azure_blob import upload_to_azure_blob
 from vusion_rail import get_devices, update_background
-from korona_cloud import add_tags
+from korona_cloud import add_tags  # <-- Make sure this exists and is correct
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -74,24 +74,44 @@ def main():
                 except Exception as e:
                     logging.error(f"Failed to update background for device {device['id']}. Skipping. Error: {e}")
 
-        # Step 5: Add tags to Korona Cloud
-        logging.info("Step 5: Adding tags to Korona Cloud API...")
+        # Step 5: Creating tags for Korona Cloud
+        logging.info("Step 5: Creating and posting tags for Korona Cloud API...")
         tags = []
         for uploaded_file in uploaded_files:
-            cache_id = os.path.splitext(uploaded_file["file"])[0]  # Remove file extension
-            for device in devices:
-                if cache_id == device["id"]:  # Match cacheId to deviceId
-                    tags.append({"device_id": device["id"], "cache_id": cache_id})
-                    logging.info(f"Tag prepared for device_id: {device['id']} with cache_id: {cache_id} and file: {uploaded_file['file']}")
+            # Remove the file extension to create the cacheId
+            filename_no_ext = os.path.splitext(uploaded_file["file"])[0]
+            logging.info(f"Processing uploaded file: {uploaded_file['file']} => Cache ID: {filename_no_ext}")
 
+            for device in devices:
+                device_id = device["id"]  # e.g., "00001"
+                if device_id in filename_no_ext:
+                    # The "name" field must contain a JSON string for Korona
+                    tag = {
+                        "name": f"{{\"deviceId\": \"{device_id}\", \"cacheId\": \"{filename_no_ext}\"}}"
+                    }
+                    tags.append(tag)
+                    logging.info(f"  --> Found deviceId '{device_id}' in '{filename_no_ext}'. Tag: {tag}")
+
+        # Log summary of tags
+        if tags:
+            logging.info(f"Total tags prepared: {len(tags)}")
+            for tag in tags:
+                logging.info(f"Tag prepared for Korona Cloud: {tag}")
+        else:
+            logging.warning("No tags prepared for upload.")
+
+        # Automatically send the tags to Korona Cloud
         if tags:
             try:
+                logging.info("Posting tags to Korona Cloud...")
                 add_tags(KORONA_ACCOUNT_ID, KORONA_USERNAME, KORONA_PASSWORD, tags)
-                logging.info(f"Tags added successfully for {len(tags)} devices.")
+                logging.info("Tags successfully sent to Korona Cloud.")
             except Exception as e:
-                logging.error(f"Failed to add tags to Korona Cloud. Error: {e}")
+                logging.error(f"Failed to send tags to Korona Cloud. Error: {e}")
+        else:
+            logging.info("No tags found to send to Korona Cloud.")
 
-        logging.info("All steps completed successfully.")
+        logging.info("Script completed successfully.")
 
     except Exception as e:
         terminate_process(f"An unexpected error occurred: {e}")
