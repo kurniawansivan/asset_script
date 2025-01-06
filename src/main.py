@@ -70,13 +70,13 @@ def main():
             cache_id = os.path.splitext(file_name)[0]      # e.g. "testing_1_00001"
             video_url = uploaded_file["url"]               # Azure URL
 
-            logging.info(f"Uploading asset '{file_name}' (cacheId='{cache_id}') to ALL devices...")
+            logging.info(f"Uploading asset '{file_name}' (cacheId='{cache_id}') with Url '{video_url}' to ALL devices...")
 
             for device in devices:
                 device_id = device["id"]
                 try:
                     logging.info(
-                        f"Device {device_id}: updating background with file={file_name} and cacheId={cache_id}"
+                        f"Device {device_id}: updating background with file={file_name} and cacheId={cache_id} with Url '{video_url}'"
                     )
                     update_background(
                         VUSION_SUBSCRIPTION_KEY,
@@ -88,8 +88,8 @@ def main():
                     logging.info(f"Device {device_id}: background updated successfully.")
 
                     # Delay 10 seconds so we don't overwhelm the API
-                    logging.info(f"Sleeping 10s before next update...")
-                    time.sleep(10)
+                    logging.info(f"Sleeping 30s before next update...")
+                    time.sleep(30)
 
                 except Exception as e:
                     logging.error(f"Failed to update background for device {device_id}. Skipping. Error: {e}")
