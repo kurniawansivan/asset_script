@@ -5,7 +5,7 @@ from config import *
 from one_drive import download_files_from_onedrive
 from azure_blob import upload_to_azure_blob
 from vusion_rail import get_devices, update_background
-from korona_cloud import add_tags  # Ensure this file/function exist
+from korona_cloud import add_tags  # Ensure this file/function exists
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -61,20 +61,34 @@ def main():
         except Exception as e:
             terminate_process(f"Failed to fetch devices from Vusion Rail API. Error: {e}")
 
-        # Step 4: Update background for ALL devices with ALL files
-        logging.info("Step 4: Updating backgrounds for every file on every device...")
+        # Step 4: Update backgrounds
+        # For files named with a device ID (e.g., "testing_1_00001.mp4"):
+        #   => Upload to ONLY that device.
+        # Otherwise (e.g., "product_middle.mp4"):
+        #   => Upload to ALL devices.
+
+        logging.info("Step 4: Updating backgrounds for devices (bulk publish with conditional logic)...")
 
         for uploaded_file in uploaded_files:
-            file_name = uploaded_file["file"]             # e.g. "upload_1_00001.mp4" or "suggest_middle.mp4"
-            cache_id = os.path.splitext(file_name)[0]     # e.g. "upload_1_00001" or "suggest_middle"
-            video_url = uploaded_file["url"]              # Azure URL
-
-            logging.info(
-                f"Uploading asset '{file_name}' (cacheId='{cache_id}') with url='{video_url}' to ALL devices..."
-            )
-
+            file_name = uploaded_file["file"]        # e.g. "testing_1_00001.mp4" or "product_middle.mp4"
+            cache_id = os.path.splitext(file_name)[0]  # e.g. "testing_1_00001" or "product_middle"
+            video_url = uploaded_file["url"]         # Azure Blob URL
+            
+            # Check if this filename includes a *specific* device ID
+            matched_device = None
             for device in devices:
-                device_id = device["id"]
+                device_id = device["id"]  # e.g. "00001"
+                if device_id in cache_id:
+                    matched_device = device
+                    break
+
+            if matched_device:
+                # Only upload to the matched device
+                device_id = matched_device["id"]
+                logging.info(
+                    f"File '{file_name}' matched device ID {device_id}. "
+                    f"Uploading ONLY to device {device_id} with cacheId='{cache_id}', url='{video_url}'..."
+                )
                 try:
                     logging.info(
                         f"Device {device_id}: updating background with file={file_name}, "
@@ -88,15 +102,38 @@ def main():
                         cache_id
                     )
                     logging.info(f"Device {device_id}: background updated successfully.")
-
-                    # Delay 10 seconds so we don't overwhelm the API
                     logging.info("Sleeping 10s before next update...")
                     time.sleep(10)
-
                 except Exception as e:
-                    logging.error(f"Failed to update background for device {device_id}. Skipping. Error: {e}")
+                    logging.error(f"Failed to update background for device {device_id}. Error: {e}")
 
-        # Step 5: Create and post tags for Korona Cloud API
+            else:
+                # Filename does NOT contain a device ID => upload to ALL devices
+                logging.info(
+                    f"File '{file_name}' does NOT match any specific device ID. "
+                    f"Uploading to ALL devices with cacheId='{cache_id}', url='{video_url}'..."
+                )
+                for device in devices:
+                    device_id = device["id"]
+                    try:
+                        logging.info(
+                            f"Device {device_id}: updating background with file={file_name}, "
+                            f"cacheId={cache_id}, url={video_url}"
+                        )
+                        update_background(
+                            VUSION_SUBSCRIPTION_KEY,
+                            VUSION_STORE_ID,
+                            device_id,
+                            video_url,
+                            cache_id
+                        )
+                        logging.info(f"Device {device_id}: background updated successfully.")
+                        logging.info("Sleeping 10s before next update...")
+                        time.sleep(10)
+                    except Exception as e:
+                        logging.error(f"Failed to update background for device {device_id}. Error: {e}")
+
+        # Step 5: Create and post tags for Korona Cloud API (unchanged)
         logging.info("Step 5: Creating and posting tags for Korona Cloud API...")
         tags = []
 
@@ -106,7 +143,7 @@ def main():
 
             # Check if filename includes a device's ID:
             for device in devices:
-                device_id = device["id"]  # e.g. "00001"
+                device_id = device["id"]
                 if device_id in file_name_no_ext:
                     # Found a device-specific file
                     tag = {
