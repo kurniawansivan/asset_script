@@ -10,6 +10,10 @@ from korona_cloud import add_tags  # Ensure this file/function exists
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# Define left and right device groups
+LEFT_DEVICES = ["00001", "00002", "00003"]
+RIGHT_DEVICES = ["00005", "00006", "00007"]
+
 def terminate_process(message):
     """Terminate the process with an error message."""
     logging.error(message)
@@ -61,112 +65,98 @@ def main():
         except Exception as e:
             terminate_process(f"Failed to fetch devices from Vusion Rail API. Error: {e}")
 
-        # Step 4: Update backgrounds
-        # For files named with a device ID (e.g., "testing_1_00001.mp4"):
-        #   => Upload to ONLY that device.
-        # Otherwise (e.g., "product_middle.mp4"):
-        #   => Upload to ALL devices.
+        # Helper function for deciding which devices get a particular file
+        def get_target_devices(filename_no_ext):
+            """
+            1) If filename contains a specific device ID (e.g. '00001'), return [thatDevice].
+            2) Else if 'left_line_' in name => return LEFT_DEVICES.
+            3) Else if 'right_line_' in name => return RIGHT_DEVICES.
+            4) Otherwise => return ALL devices.
+            """
+            # 1) Check if file name includes a device's ID
+            for dev in devices:
+                if dev["id"] in filename_no_ext:
+                    return [dev["id"]]
 
+            # 2) Check for left_line_
+            if "left_line_" in filename_no_ext:
+                return LEFT_DEVICES
+
+            # 3) Check for right_line_
+            if "right_line_" in filename_no_ext:
+                return RIGHT_DEVICES
+
+            # 4) Otherwise => all devices
+            return [dev["id"] for dev in devices]
+
+        # Step 4: Update backgrounds
         logging.info("Step 4: Updating backgrounds for devices (bulk publish with conditional logic)...")
 
         for uploaded_file in uploaded_files:
-            file_name = uploaded_file["file"]        # e.g. "testing_1_00001.mp4" or "product_middle.mp4"
-            cache_id = os.path.splitext(file_name)[0]  # e.g. "testing_1_00001" or "product_middle"
-            video_url = uploaded_file["url"]         # Azure Blob URL
-            
-            # Check if this filename includes a *specific* device ID
-            matched_device = None
-            for device in devices:
-                device_id = device["id"]  # e.g. "00001"
-                if device_id in cache_id:
-                    matched_device = device
-                    break
+            file_name = uploaded_file["file"]
+            cache_id = os.path.splitext(file_name)[0]
+            video_url = uploaded_file["url"]
 
-            if matched_device:
-                # Only upload to the matched device
-                device_id = matched_device["id"]
+            # Decide which devices get this file
+            target_device_ids = get_target_devices(cache_id)
+
+            if len(target_device_ids) == 1:
                 logging.info(
-                    f"File '{file_name}' matched device ID {device_id}. "
-                    f"Uploading ONLY to device {device_id} with cacheId='{cache_id}', url='{video_url}'..."
+                    f"File '{file_name}' => single device {target_device_ids[0]} "
+                    f"(cacheId='{cache_id}', url='{video_url}')."
+                )
+            else:
+                logging.info(
+                    f"File '{file_name}' => multiple devices {target_device_ids} "
+                    f"(cacheId='{cache_id}', url='{video_url}')."
+                )
+
+            # Upload to each target device
+            for dev_id in target_device_ids:
+                logging.info(
+                    f"Device {dev_id}: updating background with file={file_name}, "
+                    f"cacheId={cache_id}, url={video_url}"
                 )
                 try:
-                    logging.info(
-                        f"Device {device_id}: updating background with file={file_name}, "
-                        f"cacheId={cache_id}, url={video_url}"
-                    )
                     update_background(
                         VUSION_SUBSCRIPTION_KEY,
                         VUSION_STORE_ID,
-                        device_id,
+                        dev_id,
                         video_url,
                         cache_id
                     )
-                    logging.info(f"Device {device_id}: background updated successfully.")
-                    logging.info("Sleeping 10s before next update...")
-                    time.sleep(10)
+                    logging.info(f"Device {dev_id}: background updated successfully.")
+                    logging.info("Sleeping 5s before next update...")
+                    time.sleep(5)
                 except Exception as e:
-                    logging.error(f"Failed to update background for device {device_id}. Error: {e}")
+                    logging.error(f"Failed to update background for device {dev_id}. Error: {e}")
 
-            else:
-                # Filename does NOT contain a device ID => upload to ALL devices
-                logging.info(
-                    f"File '{file_name}' does NOT match any specific device ID. "
-                    f"Uploading to ALL devices with cacheId='{cache_id}', url='{video_url}'..."
-                )
-                for device in devices:
-                    device_id = device["id"]
-                    try:
-                        logging.info(
-                            f"Device {device_id}: updating background with file={file_name}, "
-                            f"cacheId={cache_id}, url={video_url}"
-                        )
-                        update_background(
-                            VUSION_SUBSCRIPTION_KEY,
-                            VUSION_STORE_ID,
-                            device_id,
-                            video_url,
-                            cache_id
-                        )
-                        logging.info(f"Device {device_id}: background updated successfully.")
-                        logging.info("Sleeping 10s before next update...")
-                        time.sleep(10)
-                    except Exception as e:
-                        logging.error(f"Failed to update background for device {device_id}. Error: {e}")
-
-        # Step 5: Create and post tags for Korona Cloud API (unchanged)
+        # Step 5: Create and post tags for Korona Cloud API
         logging.info("Step 5: Creating and posting tags for Korona Cloud API...")
         tags = []
 
-        for uploaded_file in uploaded_files:
-            file_name_no_ext = os.path.splitext(uploaded_file["file"])[0]
-            matched_any_device = False
+        for uf in uploaded_files:
+            file_name_no_ext = os.path.splitext(uf["file"])[0]
+            # Decide which devices get tags for this file (same logic)
+            target_device_ids = get_target_devices(file_name_no_ext)
 
-            # Check if filename includes a device's ID:
-            for device in devices:
-                device_id = device["id"]
-                if device_id in file_name_no_ext:
-                    # Found a device-specific file
+            if len(target_device_ids) == 1:
+                dev_id = target_device_ids[0]
+                tag = {
+                    "name": f'{{"deviceId": "{dev_id}", "cacheId": "{file_name_no_ext}"}}'
+                }
+                tags.append(tag)
+                logging.info(
+                    f"File '{file_name_no_ext}' => single device {dev_id}. Tag: {tag}"
+                )
+            else:
+                for dev_id in target_device_ids:
                     tag = {
-                        "name": f'{{"deviceId": "{device_id}", "cacheId": "{file_name_no_ext}"}}'
+                        "name": f'{{"deviceId": "{dev_id}", "cacheId": "{file_name_no_ext}"}}'
                     }
                     tags.append(tag)
                     logging.info(
-                        f"Matched device {device_id} to file '{file_name_no_ext}'. Tag created: {tag}"
-                    )
-                    matched_any_device = True
-                    break
-
-            # If no specific device ID is in the filename, create a tag for every device:
-            if not matched_any_device:
-                for device in devices:
-                    device_id = device["id"]
-                    tag = {
-                        "name": f'{{"deviceId": "{device_id}", "cacheId": "{file_name_no_ext}"}}'
-                    }
-                    tags.append(tag)
-                    logging.info(
-                        f"Filename '{file_name_no_ext}' does not include a specific device ID, "
-                        f"so creating tag for device {device_id}: {tag}"
+                        f"File '{file_name_no_ext}' => device {dev_id}. Tag: {tag}"
                     )
 
         # Log summary of tags
