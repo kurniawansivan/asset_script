@@ -50,7 +50,7 @@ def update_background(subscription_key, store_id, device_id, video_url, cache_id
                 "id": "layer-1",
                 "type": "video",
                 "width": 1920,
-                "height": 158,
+                "height": 168,
                 "url": video_url,
                 "cacheId": cache_id,
                 "visible": True

@@ -10,10 +10,6 @@ from korona_cloud import add_tags  # Ensure this file/function exists
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Define left and right device groups
-LEFT_DEVICES = ["00001", "00002", "00003"]
-RIGHT_DEVICES = ["00005", "00006", "00007"]
-
 def terminate_process(message):
     """Terminate the process with an error message."""
     logging.error(message)
@@ -65,40 +61,34 @@ def main():
         except Exception as e:
             terminate_process(f"Failed to fetch devices from Vusion Rail API. Error: {e}")
 
-        # Helper function for deciding which devices get a particular file
-        def get_target_devices(filename_no_ext):
+        # Helper function: which devices should get this file?
+        def get_target_devices_for_file(filename_no_ext):
             """
-            1) If filename contains a specific device ID (e.g. '00001'), return [thatDevice].
-            2) Else if 'left_line_' in name => return LEFT_DEVICES.
-            3) Else if 'right_line_' in name => return RIGHT_DEVICES.
-            4) Otherwise => return ALL devices.
+            1) If the file name includes exactly one device ID (e.g., "00001"), return [thatDevice].
+            2) Otherwise, return all devices.
             """
-            # 1) Check if file name includes a device's ID
+            matched_device_id = None
             for dev in devices:
                 if dev["id"] in filename_no_ext:
-                    return [dev["id"]]
+                    matched_device_id = dev["id"]
+                    break
 
-            # 2) Check for left_line_
-            if "left_line_" in filename_no_ext:
-                return LEFT_DEVICES
-
-            # 3) Check for right_line_
-            if "right_line_" in filename_no_ext:
-                return RIGHT_DEVICES
-
-            # 4) Otherwise => all devices
-            return [dev["id"] for dev in devices]
+            if matched_device_id:
+                return [matched_device_id]
+            else:
+                # No match => file goes to all devices
+                return [dev["id"] for dev in devices]
 
         # Step 4: Update backgrounds
-        logging.info("Step 4: Updating backgrounds for devices (bulk publish with conditional logic)...")
+        logging.info("Step 4: Updating backgrounds for devices...")
 
         for uploaded_file in uploaded_files:
             file_name = uploaded_file["file"]
             cache_id = os.path.splitext(file_name)[0]
             video_url = uploaded_file["url"]
 
-            # Decide which devices get this file
-            target_device_ids = get_target_devices(cache_id)
+            # Get the device list for this file
+            target_device_ids = get_target_devices_for_file(cache_id)
 
             if len(target_device_ids) == 1:
                 logging.info(
@@ -111,7 +101,7 @@ def main():
                     f"(cacheId='{cache_id}', url='{video_url}')."
                 )
 
-            # Upload to each target device
+            # Update each target device
             for dev_id in target_device_ids:
                 logging.info(
                     f"Device {dev_id}: updating background with file={file_name}, "
@@ -135,10 +125,22 @@ def main():
         logging.info("Step 5: Creating and posting tags for Korona Cloud API...")
         tags = []
 
+        def get_target_devices_for_tags(filename_no_ext):
+            # Same logic for tag creation
+            matched_device_id = None
+            for dev in devices:
+                if dev["id"] in filename_no_ext:
+                    matched_device_id = dev["id"]
+                    break
+
+            if matched_device_id:
+                return [matched_device_id]
+            else:
+                return [dev["id"] for dev in devices]
+
         for uf in uploaded_files:
             file_name_no_ext = os.path.splitext(uf["file"])[0]
-            # Decide which devices get tags for this file (same logic)
-            target_device_ids = get_target_devices(file_name_no_ext)
+            target_device_ids = get_target_devices_for_tags(file_name_no_ext)
 
             if len(target_device_ids) == 1:
                 dev_id = target_device_ids[0]
