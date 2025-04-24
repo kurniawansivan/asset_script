@@ -172,13 +172,3 @@ Contributions are welcome! If you have suggestions or find any issues, feel free
 
 This project is licensed under the MIT License.
 ```
-
----
-
-### **Penjelasan**
-1. **Getting Authorization Code**: Langkah-langkah dijelaskan secara rinci untuk menghindari kebingungan.
-2. **Token Refresh**: Diintegrasikan dengan langkah otomatis untuk pembaruan token.
-3. **Project Workflow**: Ditata rapi untuk mempermudah pengguna memahami alur kerja.
-4. **Error Handling**: Panduan troubleshooting membantu menangani kendala umum.
-
-Jika ada bagian yang perlu disesuaikan, beri tahu saya! 😊
